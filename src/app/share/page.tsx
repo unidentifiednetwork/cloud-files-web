@@ -58,14 +58,15 @@ function SharePageContent() {
   const shareType = noteBundle ? "note" : "file";
 
   const [password, setPassword] = useState("");
-  const [step, setStep] = useState<"password" | "accessing" | "preview" | "error">("password");
+  const [step, setStep] = useState<"password" | "accessing" | "preview" | "downloading" | "error">("password");
   const [error, setError] = useState("");
-  const [fileData, setFileData] = useState<{ url: string; name: string; type: string; size: number; textContent?: string } | null>(null);
+  const [fileData, setFileData] = useState<{ url?: string; name: string; type: string; size: number; textContent?: string; presignedUrl?: string; fileKeyBase64?: string; fileNonceBase64?: string } | null>(null);
   const [noteData, setNoteData] = useState<SharedNoteData | null>(null);
   const [progress, setProgress] = useState(0);
   const [copied, setCopied] = useState(false);
   const [showAppBanner, setShowAppBanner] = useState(false);
   const [isAndroid, setIsAndroid] = useState(false);
+  const [loadingPreview, setLoadingPreview] = useState(false);
 
   // Detect Android and show app banner
   useEffect(() => {
@@ -186,32 +187,66 @@ function SharePageContent() {
       const fileNonceBytes = await decryptBytes(fileNonceEnc, shareKey);
       const fileNonceBase64 = bytesToBase64(fileNonceBytes);
 
-      setProgress(60);
+      setProgress(80);
 
-      const response = await fetch(innerBundle.presignedUrl);
-      if (!response.ok) throw new Error('File not found or link expired');
-      const encryptedData = new Uint8Array(await response.arrayBuffer());
-
-      setProgress(90);
-
-      const decryptedData = await decryptFile(encryptedData, fileKeyBase64, fileNonceBase64);
-
-      const blob = new Blob([decryptedData], { type: innerBundle.mimeType });
-      const url = URL.createObjectURL(blob);
-      const size = decryptedData.byteLength;
-
-      let textContent: string | undefined;
-      if (innerBundle.mimeType.startsWith('text/')) {
-        textContent = new TextDecoder().decode(decryptedData);
+      // Get file size from presigned URL headers
+      let fileSize = 0;
+      try {
+        const headResponse = await fetch(innerBundle.presignedUrl, { method: 'HEAD' });
+        fileSize = parseInt(headResponse.headers.get('content-length') || '0', 10);
+      } catch (err) {
+        // If HEAD fails, we'll get size on download
+        fileSize = 0;
       }
 
-      setFileData({
-        url,
-        name: innerBundle.fileName,
-        type: innerBundle.mimeType,
-        size,
-        textContent,
-      });
+      setProgress(85);
+
+      // For small files (images/videos < 10MB), download and decrypt immediately for preview
+      const isSmallPreviewable = (innerBundle.mimeType.startsWith('image/') || innerBundle.mimeType.startsWith('video/')) && fileSize < 10 * 1024 * 1024;
+
+      if (isSmallPreviewable) {
+        try {
+          const response = await fetch(innerBundle.presignedUrl);
+          if (!response.ok) throw new Error('File not found or link expired');
+          const encryptedData = new Uint8Array(await response.arrayBuffer());
+
+          setProgress(95);
+
+          const decryptedData = await decryptFile(encryptedData, fileKeyBase64, fileNonceBase64);
+          const blob = new Blob([decryptedData], { type: innerBundle.mimeType });
+          const url = URL.createObjectURL(blob);
+
+          setFileData({
+            url,
+            name: innerBundle.fileName,
+            type: innerBundle.mimeType,
+            size: fileSize || decryptedData.byteLength,
+            presignedUrl: innerBundle.presignedUrl,
+            fileKeyBase64,
+            fileNonceBase64,
+          });
+        } catch (err) {
+          // If preview fails, fall back to metadata only
+          setFileData({
+            name: innerBundle.fileName,
+            type: innerBundle.mimeType,
+            size: fileSize,
+            presignedUrl: innerBundle.presignedUrl,
+            fileKeyBase64,
+            fileNonceBase64,
+          });
+        }
+      } else {
+        // Store metadata for preview - don't download/decrypt full file yet
+        setFileData({
+          name: innerBundle.fileName,
+          type: innerBundle.mimeType,
+          size: fileSize,
+          presignedUrl: innerBundle.presignedUrl,
+          fileKeyBase64,
+          fileNonceBase64,
+        });
+      }
 
       setStep("preview");
       setProgress(100);
@@ -223,26 +258,123 @@ function SharePageContent() {
     }
   }, [password, bundleB64, shareType, noteBundle]);
 
-  const handleDownload = () => {
-    if (!fileData) return;
+  const handleDownload = async () => {
+    if (!fileData || !fileData.presignedUrl || !fileData.fileKeyBase64 || !fileData.fileNonceBase64) return;
     
-    // Create download link
-    const a = document.createElement('a');
-    a.href = fileData.url;
-    a.download = fileData.name;
-    a.style.display = 'none';
-    
-    // For mobile browsers, append to body and trigger click
-    document.body.appendChild(a);
-    
-    // Use setTimeout for iOS Safari compatibility
-    setTimeout(() => {
-      a.click();
-      // Cleanup after download starts
+    setStep("downloading");
+    setProgress(10);
+
+    try {
+      // Download encrypted file with progress tracking
+      const xhr = new XMLHttpRequest();
+
+      const encryptedData = await new Promise<Uint8Array>((resolve, reject) => {
+        xhr.open('GET', fileData.presignedUrl!, true);
+        xhr.responseType = 'arraybuffer';
+
+        xhr.onprogress = (event) => {
+          if (event.lengthComputable) {
+            const percentComplete = (event.loaded / event.total) * 40 + 10; // 10-50%
+            setProgress(percentComplete);
+          } else {
+            // No length info, just show incremental progress
+            setProgress(Math.min(40, Math.random() * 30 + 10));
+          }
+        };
+
+        xhr.onload = () => {
+          if (xhr.status === 200) {
+            resolve(new Uint8Array(xhr.response));
+          } else {
+            reject(new Error('File not found or link expired'));
+          }
+        };
+
+        xhr.onerror = () => reject(new Error('Failed to download file'));
+        xhr.onabort = () => reject(new Error('Download cancelled'));
+        xhr.send();
+      });
+
+      setProgress(55);
+
+      // Decrypt file
+      const decryptedData = await decryptFile(encryptedData, fileData.fileKeyBase64, fileData.fileNonceBase64);
+
+      setProgress(90);
+
+      // Create blob and download
+      const blob = new Blob([decryptedData], { type: fileData.type });
+      const url = URL.createObjectURL(blob);
+      
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = fileData.name;
+      a.style.display = 'none';
+      
+      document.body.appendChild(a);
+      
       setTimeout(() => {
-        document.body.removeChild(a);
-      }, 100);
-    }, 0);
+        a.click();
+        setTimeout(() => {
+          document.body.removeChild(a);
+          URL.revokeObjectURL(url);
+          setStep("preview");
+          setProgress(100);
+        }, 100);
+      }, 0);
+    } catch (err: unknown) {
+      const errorMessage = err instanceof Error ? err.message : 'Failed to download file';
+      setError(errorMessage);
+      setStep("error");
+      setProgress(0);
+    }
+  };
+
+  const handleLoadPreview = async () => {
+    if (!fileData || !fileData.presignedUrl || !fileData.fileKeyBase64 || !fileData.fileNonceBase64) return;
+    
+    setLoadingPreview(true);
+
+    try {
+      // Download encrypted file with progress tracking
+      const xhr = new XMLHttpRequest();
+
+      const encryptedData = await new Promise<Uint8Array>((resolve, reject) => {
+        xhr.open('GET', fileData.presignedUrl!, true);
+        xhr.responseType = 'arraybuffer';
+
+        xhr.onprogress = (event) => {
+          if (event.lengthComputable) {
+            const percentComplete = (event.loaded / event.total) * 50; // 0-50%
+          }
+        };
+
+        xhr.onload = () => {
+          if (xhr.status === 200) {
+            resolve(new Uint8Array(xhr.response));
+          } else {
+            reject(new Error('File not found or link expired'));
+          }
+        };
+
+        xhr.onerror = () => reject(new Error('Failed to load preview'));
+        xhr.onabort = () => reject(new Error('Preview cancelled'));
+        xhr.send();
+      });
+
+      // Decrypt file
+      const decryptedData = await decryptFile(encryptedData, fileData.fileKeyBase64, fileData.fileNonceBase64);
+      const blob = new Blob([decryptedData], { type: fileData.type });
+      const url = URL.createObjectURL(blob);
+
+      // Update fileData with URL for preview
+      setFileData(prev => prev ? { ...prev, url } : null);
+    } catch (err: unknown) {
+      const errorMessage = err instanceof Error ? err.message : 'Failed to load preview';
+      setError(errorMessage);
+    } finally {
+      setLoadingPreview(false);
+    }
   };
 
   const handleCopyLink = () => {
@@ -422,8 +554,22 @@ function SharePageContent() {
             <div className="flex flex-col items-center justify-center py-20 space-y-6">
               <Loader className="h-8 w-8 text-white/50 animate-spin" />
               <div className="text-center">
-                <h2 className="text-lg font-semibold text-white mb-2">Decrypting file...</h2>
-                <p className="text-sm text-white/40">Please wait</p>
+                <h2 className="text-lg font-semibold text-white mb-2">Verifying and loading...</h2>
+                <p className="text-sm text-white/40">Decrypting metadata</p>
+              </div>
+              <div className="w-full max-w-xs">
+                <Progress value={progress} className="h-2 bg-white/[0.06]" />
+                <p className="text-xs text-white/30 mt-2 text-center">{Math.round(progress)}%</p>
+              </div>
+            </div>
+          )}
+
+          {step === "downloading" && (
+            <div className="flex flex-col items-center justify-center py-20 space-y-6">
+              <Loader className="h-8 w-8 text-white/50 animate-spin" />
+              <div className="text-center">
+                <h2 className="text-lg font-semibold text-white mb-2">Downloading & decrypting file...</h2>
+                <p className="text-sm text-white/40">This may take a moment</p>
               </div>
               <div className="w-full max-w-xs">
                 <Progress value={progress} className="h-2 bg-white/[0.06]" />
@@ -556,7 +702,7 @@ function SharePageContent() {
                     {fileData.textContent}
                   </pre>
                 </div>
-              ) : fileData.type.startsWith('image/') ? (
+              ) : fileData.url && fileData.type.startsWith('image/') ? (
                 <div className="bg-white/[0.03] border border-white/[0.06] rounded-xl p-4">
                   <img
                     src={fileData.url}
@@ -564,7 +710,7 @@ function SharePageContent() {
                     className="w-full max-h-96 object-contain rounded-lg"
                   />
                 </div>
-              ) : fileData.type.startsWith('video/') ? (
+              ) : fileData.url && fileData.type.startsWith('video/') ? (
                 <div className="bg-white/[0.03] border border-white/[0.06] rounded-xl p-4">
                   <video
                     src={fileData.url}
@@ -573,6 +719,30 @@ function SharePageContent() {
                   >
                     Your browser does not support video playback.
                   </video>
+                </div>
+              ) : !fileData.url && (fileData.type.startsWith('image/') || fileData.type.startsWith('video/')) ? (
+                <div className="bg-white/[0.03] border border-white/[0.06] rounded-xl p-12">
+                  <div className="text-center space-y-4">
+                    <Eye className="h-12 w-12 text-white/20 mx-auto" />
+                    <p className="text-sm text-white/40">Preview not loaded yet</p>
+                    <Button
+                      onClick={handleLoadPreview}
+                      disabled={loadingPreview}
+                      className="bg-sky-500 hover:bg-sky-600 text-white"
+                    >
+                      {loadingPreview ? (
+                        <>
+                          <Loader className="h-4 w-4 mr-2 animate-spin" />
+                          Loading...
+                        </>
+                      ) : (
+                        <>
+                          <Eye className="h-4 w-4 mr-2" />
+                          Load Preview
+                        </>
+                      )}
+                    </Button>
+                  </div>
                 </div>
               ) : (
                 <div className="bg-white/[0.03] border border-white/[0.06] rounded-xl p-12">
