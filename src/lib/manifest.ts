@@ -13,6 +13,7 @@ import { EncryptedFileInfo } from "./e2ee";
 import { StorageConfig } from "./settings";
 import { uploadToStorage, downloadFromStorage } from "./storage-client";
 import { clearNotesCache } from "./notes";
+import { clearCalendarCache } from "./calendar";
 
 const MANIFEST_KEY = ".manifest.enc";
 const MANIFEST_SALT_KEY = ".manifest.salt";
@@ -244,6 +245,9 @@ export function lockManifest(): void {
   
   // Clear notes cache as well
   clearNotesCache();
+  
+  // Clear calendar cache
+  clearCalendarCache();
   
   if (typeof sessionStorage !== "undefined") {
     sessionStorage.removeItem(SESSION_CACHE_KEY);

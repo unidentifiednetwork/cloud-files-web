@@ -48,6 +48,7 @@ Your Device                Auth Server              Your S3/R2 Bucket
 | `e2ee.ts` | **E2EE Encryption Engine** - AES-256-GCM file encryption, key generation, base64 encoding, EXIF stripping |
 | `manifest.ts` | **Encrypted Manifest** - Stores file metadata in R2/S3, PBKDF2 key derivation, folder management |
 | `notes.ts` | **Notes System** - Encrypted markdown notes with tags, search, sharing capabilities |
+| `calendar.ts` | **Calendar System** - Encrypted calendar events with reminders, recurring events, tags |
 | `storage-client.ts` | **S3/R2 Client** - Presigned URLs, direct upload/download to user's storage bucket |
 | `crypto.ts` | **Ed25519 Cryptography** - Keypair generation for authentication signatures |
 | `api.ts` | **Auth API** - User registration, login challenges, 2FA, invitation codes |
@@ -63,7 +64,8 @@ Your Device                Auth Server              Your S3/R2 Bucket
 
 | Component | Purpose |
 |-----------|---------|
-| `FileManager.tsx` | **Main UI** (~2400 lines) - File listing, folders, notes panel, previews, sharing, context menus |
+| `FileManager.tsx` | **Main UI** (~2500 lines) - File listing, folders, notes panel, calendar, previews, sharing, context menus |
+| `CalendarView.tsx` | **Calendar UI** - Month view calendar with event management, reminders, recurring events |
 | `FileUpload.tsx` | Drag-and-drop upload with encryption progress |
 | `ManifestUnlock.tsx` | Password prompt for unlocking encrypted manifest |
 | `StorageSettings.tsx` | S3/R2 configuration form with connection testing |
@@ -95,6 +97,12 @@ Your Device                Auth Server              Your S3/R2 Bucket
    File Key → Derive Share Key (PBKDF2) → Encrypt with Share Password → Generate URL
    ```
 
+4. **Calendar Events**:
+   ```
+   Event Data → JSON → Encrypt with Master Key (AES-GCM) → Upload to R2/calendar/
+   Calendar Manifest → Encrypt with Master Key → Store as .calendar-manifest.enc
+   ```
+
 ### Key Storage
 
 - **Master Key**: Derived from user password, never stored
@@ -109,6 +117,9 @@ Your Device                Auth Server              Your S3/R2 Bucket
 | File contents | ❌ Encrypted |
 | File names | ❌ Encrypted (in manifest) |
 | File keys | ❌ Never sent |
+| Notes content | ❌ Encrypted |
+| Calendar events | ❌ Encrypted |
+| Event reminders | ❌ Encrypted |
 | Master password | ❌ Never sent |
 | Storage credentials | ❌ Stored locally only |
 | User identity | ✅ Username, public key |
@@ -156,6 +167,24 @@ Your Device                Auth Server              Your S3/R2 Bucket
 7. Recipient accesses link with share password
 8. Client derives key from share password
 9. File decrypted and available for download
+
+### Calendar Event Creation
+
+1. User opens calendar and creates new event
+2. Client creates event object with title, description, times, reminders, etc.
+3. Event JSON encrypted with master key (AES-256-GCM)
+4. Encrypted event uploaded to S3/R2 at `calendar/<event_id>.enc`
+5. Event metadata (id, title, dates, reminder count) stored in calendar manifest
+6. Calendar manifest encrypted with master key and uploaded to S3/R2
+
+### Calendar Reminders
+
+1. Client periodically checks for upcoming events with reminders
+2. When event time approaches (based on reminder settings):
+   - 1 day before, 1 hour before, 15 minutes before, etc.
+3. Browser notification shown to user (client-side only)
+4. Reminder marked as triggered in event data
+5. Encrypted event re-uploaded with updated reminder state
 
 ## API Endpoints
 

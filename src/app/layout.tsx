@@ -11,7 +11,7 @@ const inter = Inter({
 });
 
 export const metadata: Metadata = {
-  title: "UNET Cloud Files",
+  title: "UNET Cloud",
   description: "Secure E2EE cloud file storage powered by UNET",
   icons: {
     icon: [

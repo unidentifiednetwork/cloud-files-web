@@ -503,7 +503,7 @@ export default function LoginPage() {
             className="w-full bg-white text-black hover:bg-slate-200 gap-2"
             size="lg"
           >
-            Continue to Cloud Files <ArrowRight className="h-4 w-4" />
+            Continue to Cloud <ArrowRight className="h-4 w-4" />
           </Button>
         </div>
       </div>
@@ -646,14 +646,14 @@ export default function LoginPage() {
   return (
     <div className="min-h-screen bg-[#0f0f0f] flex flex-col items-center justify-center p-4">
       <div className="w-full max-w-md">
-        {/* Header with Cloud Files branding */}
+        {/* Header with Cloud branding */}
         <div className="mb-8 text-center">
           <div className="flex items-center justify-center gap-2 mb-4">
             <Cloud className="h-10 w-10 text-blue-400" />
-            <h1 className="text-4xl font-bold text-white">Cloud Files</h1>
+            <h1 className="text-4xl font-bold text-white">Cloud</h1>
           </div>
           <p className="text-slate-400">
-            E2EE file storage powered by UNET
+            E2EE cloud storage powered by UNET
           </p>
         </div>
 

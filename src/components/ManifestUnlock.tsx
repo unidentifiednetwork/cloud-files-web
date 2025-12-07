@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -32,9 +32,9 @@ export function ManifestUnlock({ config, onUnlocked }: ManifestUnlockProps) {
   const [mode, setMode] = useState<"check" | "create" | "unlock">("check");
 
   // Check if manifest exists on mount
-  useState(() => {
+  useEffect(() => {
     checkManifest();
-  });
+  }, []);
 
   async function checkManifest() {
     setIsLoading(true);

@@ -44,7 +44,8 @@ import {
   PinOff,
   Save,
   Tag,
-  Clock
+  Clock,
+  Calendar
 } from "lucide-react";
 import { formatBytes } from "@/lib/utils";
 import { format } from "date-fns";
@@ -97,9 +98,11 @@ import {
   generateNoteSharePassword,
   syncNotes
 } from "@/lib/notes";
+import { isCalendarInitialized, syncCalendar } from "@/lib/calendar";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { MarkdownEditor } from "@/components/MarkdownEditor";
+import { CalendarView } from "@/components/CalendarView";
 
 interface FileManagerProps {
   refreshTrigger?: number;
@@ -107,7 +110,7 @@ interface FileManagerProps {
 }
 
 type ViewMode = "grid" | "list";
-type Section = "all" | "favorites" | "folder" | "notes";
+type Section = "all" | "favorites" | "folder" | "notes" | "calendar";
 
 // Get file icon based on mime type
 function getFileIcon(mimeType: string) {
@@ -191,7 +194,6 @@ export function FileManager({ refreshTrigger, onFolderChange }: FileManagerProps
   const [noteContent, setNoteContent] = useState("");
   const [noteTags, setNoteTags] = useState("");
   const [noteColor, setNoteColor] = useState("default");
-  const [noteSearchQuery, setNoteSearchQuery] = useState("");
   const [showDeleteNoteConfirm, setShowDeleteNoteConfirm] = useState<string | null>(null);
   const [showNoteShareModal, setShowNoteShareModal] = useState(false);
   const [noteSharePassword, setNoteSharePassword] = useState('');
@@ -423,6 +425,11 @@ export function FileManager({ refreshTrigger, onFolderChange }: FileManagerProps
       if (isNotesInitialized()) {
         await syncNotes(config);
         loadNotes();
+      }
+      
+      // Also sync calendar if initialized
+      if (isCalendarInitialized()) {
+        await syncCalendar(config);
       }
     } catch (error) {
       console.error("Auto-refresh failed:", error);
@@ -1155,6 +1162,17 @@ export function FileManager({ refreshTrigger, onFolderChange }: FileManagerProps
             <span className="hidden sm:inline">Notes</span>
           </button>
 
+          <button
+            onClick={() => { setSection("calendar"); setCurrentFolderId(undefined); setFolderPath([]); onFolderChange?.(undefined); }}
+            className={`flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-medium transition-all ${section === "calendar"
+              ? "bg-sky-500/20 text-sky-400"
+              : "text-white/60 hover:text-white hover:bg-white/5"
+              }`}
+          >
+            <Calendar className={`h-4 w-4 ${section === "calendar" ? "fill-sky-400/20" : ""}`} />
+            <span className="hidden sm:inline">Calendar</span>
+          </button>
+
           {section === "all" && folderPath.length > 0 && (
             <>
               <ChevronRight className="h-4 w-4 text-white/20 flex-shrink-0" />
@@ -1503,7 +1521,10 @@ export function FileManager({ refreshTrigger, onFolderChange }: FileManagerProps
 
       {/* Content */}
       <div className="flex-1 overflow-auto">
-        {section === "notes" ? (
+        {section === "calendar" ? (
+          /* Calendar Section */
+          <CalendarView />
+        ) : section === "notes" ? (
           /* Notes Section */
           <div className="h-full flex">
             {/* Notes List */}
@@ -1521,41 +1542,18 @@ export function FileManager({ refreshTrigger, onFolderChange }: FileManagerProps
                     New Note
                   </Button>
                 </div>
-                <div className="relative">
-                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-white/40" />
-                  <Input
-                    value={noteSearchQuery}
-                    onChange={(e) => setNoteSearchQuery(e.target.value)}
-                    placeholder="Search notes..."
-                    className="pl-9 h-9 bg-white/5 border-0 text-white placeholder:text-white/40"
-                  />
-                </div>
               </div>
 
               {/* Notes List */}
               <div className="flex-1 overflow-auto p-2 space-y-2">
-                {notes.filter(note => 
-                  noteSearchQuery ? 
-                    note.title.toLowerCase().includes(noteSearchQuery.toLowerCase()) ||
-                    note.tags.some(t => t.toLowerCase().includes(noteSearchQuery.toLowerCase()))
-                    : true
-                ).length === 0 ? (
+                {notes.length === 0 ? (
                   <div className="text-center py-12">
                     <StickyNote className="h-12 w-12 text-amber-500/30 mx-auto mb-3" />
-                    <p className="text-white/50 text-sm">
-                      {noteSearchQuery ? "No notes found" : "No notes yet"}
-                    </p>
-                    <p className="text-white/30 text-xs mt-1">
-                      {noteSearchQuery ? "Try a different search" : "Create your first note"}
-                    </p>
+                    <p className="text-white/50 text-sm">No notes yet</p>
+                    <p className="text-white/30 text-xs mt-1">Create your first note</p>
                   </div>
                 ) : (
-                  notes.filter(note => 
-                    noteSearchQuery ? 
-                      note.title.toLowerCase().includes(noteSearchQuery.toLowerCase()) ||
-                      note.tags.some(t => t.toLowerCase().includes(noteSearchQuery.toLowerCase()))
-                      : true
-                  ).map(note => (
+                  notes.map(note => (
                     <div
                       key={note.id}
                       onClick={() => openNote(note.id)}
