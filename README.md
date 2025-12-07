@@ -1,4 +1,4 @@
-# UNET Cloud - E2EE File & Notes Storage
+# UNET Cloud - E2EE File & Notes Storage & Calendar
 
 A secure, end-to-end encrypted cloud storage built with Next.js. **Everything is encrypted on your device** before upload — your files, notes, and encryption keys never leave unencrypted.
 
