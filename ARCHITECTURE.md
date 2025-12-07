@@ -124,6 +124,12 @@ Your Device                Auth Server              Your S3/R2 Bucket
 | Storage credentials | ❌ Stored locally only |
 | User identity | ✅ Username, public key |
 
+## Upload Limits
+
+- **Maximum file size**: 2 GB per file
+- **Maximum files per upload**: 10 files
+- All files are encrypted client-side before upload
+
 ## Data Flow
 
 ### User Registration

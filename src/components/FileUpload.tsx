@@ -41,7 +41,7 @@ export const FileUpload = forwardRef<FileUploadHandle, FileUploadProps>(
   function FileUpload({
     onFileUploaded,
     onUploadComplete,
-    maxFileSize = 500,
+    maxFileSize = 2048,
     maxFiles = 10,
     currentFolderId,
   }, ref) {
